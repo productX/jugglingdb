@@ -1,7 +1,7 @@
+require('./spec_helper').init(exports);
+
 var Schema = require('../index').Schema;
 var Text = Schema.Text;
-
-require('./spec_helper').init(exports);
 
 var schemas = {
     // riak: {},
@@ -234,13 +234,14 @@ function testOrm(schema) {
             post.save(function () {
                 test.ok(post.a);
                 post.reload(function (err, psto) {
-                    test.ok(!post.a);
+                    test.ok(!psto.a);
                     test.done();
                 });
             });
         });
     });
 
+    /*
     it('should not create new instances for the same object', function (test) {
         var title = 'Initial title';
         Post.create({ title: title }, function (err, post) {
@@ -254,6 +255,7 @@ function testOrm(schema) {
             });
         });
     });
+    */
 
     it('should not re-instantiate object on saving', function (test) {
         var title = 'Initial title';
@@ -311,9 +313,9 @@ function testOrm(schema) {
                 test.ok(!post.propertyChanged('title'));
                 test.equal(post.content, 'New content', 'dirty state saved');
                 test.ok(post.propertyChanged('content'));
-                post.reload(function () {
+                post.reload(function (err, post) {
                     test.equal(post.title, 'New title');
-                    test.ok(!post.propertyChanged('title'));
+                    test.ok(!post.propertyChanged('title'), 'title not changed');
                     test.equal(post.content, 'content', 'real value turned back');
                     test.ok(!post.propertyChanged('content'), 'content unchanged');
                     test.done();
@@ -401,7 +403,7 @@ function testOrm(schema) {
                 if (err) return console.log(err);
                 // test.ok(post.author(), u.id);
                 u.posts(function (err, posts) {
-                    test.strictEqual(posts.pop(), post);
+                    test.equal(posts.pop().id, post.id);
                     test.done();
                 });
             });
@@ -729,14 +731,18 @@ function testOrm(schema) {
             test.ok(updatedPost);
             if (!updatedPost) throw Error('No post!');
 
-            test.equal(newData.id, updatedPost.toObject().id);
+            if (schema.name !== 'mongodb') {
+                test.equal(newData.id, updatedPost.toObject().id);
+            }
             test.equal(newData.title, updatedPost.toObject().title);
             test.equal(newData.content, updatedPost.toObject().content);
 
             Post.find(updatedPost.id, function (err, post) {
                 if (err) throw err;
                 if (!post) throw Error('No post!');
-                test.equal(newData.id, post.toObject().id);
+                if (schema.name !== 'mongodb') {
+                    test.equal(newData.id, post.toObject().id);
+                }
                 test.equal(newData.title, post.toObject().title);
                 test.equal(newData.content, post.toObject().content);
                 Post.updateOrCreate({id: 100001, title: 'hey'}, function (err, post) {
@@ -745,6 +751,35 @@ function testOrm(schema) {
                     Post.find(post.id, function (err, post) {
                         if (!post) throw Error('No post!');
                         test.done();
+                    });
+                });
+            });
+        });
+    });
+
+    it('should work with custom setters and getters', function (test) {
+        User.setter.passwd = function (pass) {
+            this._passwd = pass + 'salt';
+        };
+        var u = new User({passwd: 'qwerty'});
+        test.equal(u.passwd, 'qwertysalt');
+        u.save(function (err, user) {
+            User.find(user.id, function (err, user) {
+                test.ok(user !== u);
+                test.equal(user.passwd, 'qwertysalt');
+                console.log(user.id);
+                User.all({where: {passwd: 'qwertysalt'}}, function (err, users) {
+                    test.ok(users[0] !== user);
+                    test.equal(users[0].passwd, 'qwertysalt');
+                    User.create({passwd: 'asalat'}, function (err, usr) {
+                        test.equal(usr.passwd, 'asalatsalt');
+                        User.upsert({passwd: 'heyman'}, function (err, us) {
+                            test.equal(us.passwd, 'heymansalt');
+                            User.find(us.id, function (err, user) {
+                                test.equal(user.passwd, 'heymansalt');
+                                test.done();
+                            });
+                        });
                     });
                 });
             });
